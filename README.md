@@ -81,6 +81,11 @@ A plugin joins the page build at any of ten stages:
 | `menuItems` | entries in the sidebar |
 | `validate` | findings for the repository check |
 
+A plugin script exports its factory as **`default`**, or as a named export
+called **`plugin`**. The loader does not guess — a module with several
+exported functions and neither name is refused, with a message listing what it
+did find.
+
 **The order is the contract.** A plugin declared after another sees what the
 previous one produced — which is how one plugin uses another's work without
 importing it. The electronics plugin reads the parts the inventory plugin

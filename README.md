@@ -9,8 +9,8 @@ a diagram, a model. The shell knows nothing about any of that. Plugins do.
 
 ## Status
 
-v0, in development. The plugin contract and the theme catalogue are here; the
-viewer that renders the pages lands next.
+v0, in development. The contract, the loader, the theme catalogue and the
+viewer are all here. Not published to npm yet.
 
 ## Why
 

@@ -2,8 +2,27 @@
   "name": "bancada",
   "version": "0.1.0",
   "description": "A local-first study workbench: markdown lessons, your notes, and plugins for the subject you are learning",
+  "keywords": [
+    "study",
+    "notes",
+    "markdown",
+    "plugins",
+    "local-first"
+  ],
+  "homepage": "https://github.com/HenriqueArtur/bancada#readme",
+  "bugs": {
+    "url": "https://github.com/HenriqueArtur/bancada/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HenriqueArtur/bancada.git"
+  },
   "license": "MIT",
+  "author": "Henrique Artur <contato@henriqueartur.com>",
   "type": "module",
+  "engines": {
+    "bun": ">=1.3.0"
+  },
   "module": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
@@ -15,17 +34,6 @@
     "README.md",
     "LICENSE"
   ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/HenriqueArtur/bancada.git"
-  },
-  "keywords": [
-    "study",
-    "notes",
-    "markdown",
-    "plugins",
-    "local-first"
-  ],
   "publishConfig": {
     "access": "public"
   },
@@ -34,15 +42,15 @@
     "lint": "biome check src",
     "typecheck": "tsc --noEmit"
   },
-  "devDependencies": {
-    "@biomejs/biome": "2.3.14",
-    "@types/bun": "1.3.14",
-    "typescript": "5.9.3"
-  },
   "dependencies": {
     "gray-matter": "4.0.3",
     "highlight.js": "11.11.1",
     "marked": "16.4.1",
     "marked-highlight": "2.2.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.14",
+    "@types/bun": "1.3.14",
+    "typescript": "5.9.3"
   }
 }

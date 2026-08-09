@@ -23,6 +23,18 @@ resistors short".
 Every tool that does that is welded to one subject. bancada is the half that
 is not.
 
+## Requirements
+
+**bun 1.3 or newer.** The package ships TypeScript with no build step and uses
+`Bun.file`/`Bun.write` to read the repository, so it does not run on node.
+
+## Install
+
+```bash
+bun add bancada
+bun add @bancada/inventory @bancada/electronics   # the native plugins
+```
+
 ## Running it
 
 ```ts

@@ -182,10 +182,32 @@ export interface Labels {
   inProgress: string;
   done: string;
   stuck: string;
+  /** Column headers on the home table. */
+  level: string;
+  parts: string;
+  /**
+   * Accessible names for the two header selects. Separate keys because the
+   * visible label is one word and the accessible name has to say what it
+   * selects — and because keeping them apart is what exposed a rename that
+   * had translated one and not the other.
+   */
+  themeAria: string;
+  fontAria: string;
+  copyCode: string;
+  /** Prose. `{}` placeholders are filled by `fill()`. */
+  notesIntro: string;
+  notesHint: string;
+  homeProgress: string;
+  homeHint: string;
+  /** Shown by the notes editor when a save does not land. */
+  saveError: string;
+  offline: string;
 }
 
 export interface Config {
   title: string;
+  /** Goes into `<html lang>`; screen readers pick pronunciation from it. */
+  lang: string;
   content: { lessons: string; reference: string; mine: string };
   vocabulary: { lesson: string; track: string };
   notes: { sections: string[] };
@@ -194,7 +216,7 @@ export interface Config {
   plugins: DeclaredPlugin[];
 }
 
-const DEFAULT_LABELS: Labels = {
+export const DEFAULT_LABELS: Labels = {
   lesson: "Lesson",
   exercises: "Exercises",
   myNotes: "My notes",
@@ -214,13 +236,38 @@ const DEFAULT_LABELS: Labels = {
   inProgress: "in progress",
   done: "done",
   stuck: "stuck",
+  level: "Level",
+  parts: "Parts",
+  themeAria: "Colour theme",
+  fontAria: "Reading font",
+  copyCode: "Copy code",
+  notesIntro:
+    "This file is yours and lives in {file}, outside {lessons} — nothing generated " +
+    "writes over it, and the repository can be shared without it.",
+  notesHint: "markdown in each field · ⌘/Ctrl+S saves · saves on its own when you leave a field",
+  homeProgress: "{done} of {total} done.",
+  homeHint: "The status comes from each lesson's notes file — edit it in {tab} and reload.",
+  saveError: "error: ",
+  offline: "no connection to the server",
 };
+
+/**
+ * Fills `{name}` placeholders in a label.
+ *
+ * A missing key is left as-is rather than becoming `undefined`: a visible
+ * `{tab}` on screen tells you which label is wrong, and the page still renders.
+ */
+export function fill(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (whole, key: string) =>
+    key in values ? String(values[key]) : whole,
+  );
+}
 
 const DEFAULTS = {
   content: { lessons: "lessons", reference: "reference", mine: "mine" },
   vocabulary: { lesson: "lesson", track: "Track" },
   notes: { sections: ["What went wrong", "What I did not understand"] },
-  theme: { default: "papel", font: "serifada" },
+  theme: { default: "paper", font: "serif" },
 };
 
 export function normalizeConfig(raw: Partial<Config>): Config {
@@ -230,6 +277,7 @@ export function normalizeConfig(raw: Partial<Config>): Config {
 
   return {
     title: raw.title,
+    lang: raw.lang ?? "en",
     content: { ...DEFAULTS.content, ...raw.content },
     vocabulary: { ...DEFAULTS.vocabulary, ...raw.vocabulary },
     notes: { ...DEFAULTS.notes, ...raw.notes },

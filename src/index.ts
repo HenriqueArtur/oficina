@@ -12,7 +12,9 @@ export {
   applyStage,
   type Config,
   collect,
+  DEFAULT_LABELS,
   type DeclaredPlugin,
+  fill,
   type Labels,
   type Lesson,
   type MenuItem,
@@ -27,13 +29,13 @@ export {
 } from "./plugin.ts";
 
 export {
-  CHAVES_DE_COR as COLOR_KEYS,
-  type ChaveDeCor as ColorKey,
-  cssDosTemas as themeCss,
-  FONTE_PADRAO as DEFAULT_FONT,
-  FONTES as FONTS,
-  type Fonte as Font,
-  TEMA_PADRAO as DEFAULT_THEME,
-  TEMAS as THEMES,
-  type Tema as Theme,
+  COLOR_KEYS,
+  type ColorKey,
+  DEFAULT_FONT,
+  DEFAULT_THEME,
+  FONTS,
+  type Font,
+  THEMES,
+  type Theme,
+  themeCss,
 } from "./themes.ts";

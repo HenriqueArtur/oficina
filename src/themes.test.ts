@@ -1,168 +1,161 @@
 import { describe, expect, test } from "bun:test";
-import {
-  CHAVES_DE_COR,
-  type ChaveDeCor,
-  cssDosTemas,
-  FONTES,
-  TEMA_PADRAO,
-  TEMAS,
-} from "./themes.ts";
+import { COLOR_KEYS, type ColorKey, DEFAULT_THEME, FONTS, THEMES, themeCss } from "./themes.ts";
 
-describe("catálogo de temas", () => {
-  test("tem pelo menos 12, como pedido", () => {
-    expect(TEMAS.length).toBeGreaterThanOrEqual(12);
+describe("the theme catalogue", () => {
+  test("ships at least twelve", () => {
+    expect(THEMES.length).toBeGreaterThanOrEqual(12);
   });
 
-  test("o padrão é o tema que já estava no ar", () => {
-    expect(TEMA_PADRAO).toBe("papel");
-    expect(TEMAS.find((t) => t.id === TEMA_PADRAO)).toBeTruthy();
+  test("the default names a theme that exists", () => {
+    expect(DEFAULT_THEME).toBe("paper");
+    expect(THEMES.find((t) => t.id === DEFAULT_THEME)).toBeTruthy();
   });
 
-  test("todo tema declara TODAS as variáveis de cor", () => {
-    for (const tema of TEMAS) {
-      for (const chave of CHAVES_DE_COR) {
-        // faltar uma faz o tema herdar a cor do anterior em silêncio,
-        // que é pior que um tema feio
-        expect(tema.cores[chave], `${tema.id} → ${chave}`).toBeTruthy();
+  test("every theme declares ALL the colour keys", () => {
+    for (const theme of THEMES) {
+      for (const key of COLOR_KEYS) {
+        // a missing one lets the previous theme's colour leak through in
+        // silence, which is worse than an ugly theme
+        expect(theme.colors[key], `${theme.id} → ${key}`).toBeTruthy();
       }
     }
   });
 
-  test("nenhuma variável a mais, para não haver cor morta", () => {
-    for (const tema of TEMAS) {
-      for (const chave of Object.keys(tema.cores)) {
-        expect([...CHAVES_DE_COR] as string[], `${tema.id} → ${chave}`).toContain(chave);
+  test("and no key beyond them, so no colour goes dead", () => {
+    for (const theme of THEMES) {
+      for (const key of Object.keys(theme.colors)) {
+        expect([...COLOR_KEYS] as string[], `${theme.id} → ${key}`).toContain(key);
       }
     }
   });
 
-  test("toda cor é hex de 6 dígitos", () => {
-    for (const tema of TEMAS) {
-      for (const [chave, valor] of Object.entries(tema.cores) as [ChaveDeCor, string][]) {
-        expect(valor, `${tema.id} → ${chave}`).toMatch(/^#[0-9a-f]{6}$/);
+  test("every colour is a six-digit hex", () => {
+    for (const theme of THEMES) {
+      for (const [key, value] of Object.entries(theme.colors) as [ColorKey, string][]) {
+        expect(value, `${theme.id} → ${key}`).toMatch(/^#[0-9a-f]{6}$/);
       }
     }
   });
 
-  test("id é kebab-case, para virar seletor CSS sem escape", () => {
-    for (const t of TEMAS) expect(t.id, t.id).toMatch(/^[a-z0-9-]+$/);
+  test("ids are kebab-case, so they become CSS selectors without escaping", () => {
+    for (const t of THEMES) expect(t.id, t.id).toMatch(/^[a-z0-9-]+$/);
   });
 
-  test("nenhum id repetido", () => {
-    const ids = TEMAS.map((t) => t.id);
+  test("no id repeats", () => {
+    const ids = THEMES.map((t) => t.id);
     expect(ids.length).toBe(new Set(ids).size);
   });
 
-  test("todo tema diz se é claro ou escuro", () => {
-    for (const t of TEMAS) expect(["claro", "escuro"], t.id).toContain(t.brilho);
+  test("every theme says whether it is light or dark", () => {
+    for (const t of THEMES) expect(["light", "dark"], t.id).toContain(t.mode);
   });
 
-  test("tem tema claro e tema escuro de sobra", () => {
-    expect(TEMAS.filter((t) => t.brilho === "claro").length).toBeGreaterThanOrEqual(4);
-    expect(TEMAS.filter((t) => t.brilho === "escuro").length).toBeGreaterThanOrEqual(6);
+  test("there are enough of each to pick from", () => {
+    expect(THEMES.filter((t) => t.mode === "light").length).toBeGreaterThanOrEqual(4);
+    expect(THEMES.filter((t) => t.mode === "dark").length).toBeGreaterThanOrEqual(6);
   });
 
-  test("os clássicos que pedi estão lá", () => {
-    const ids = TEMAS.map((t) => t.id);
-    for (const esperado of ["dracula", "nord", "gruvbox-escuro", "tokyo-night", "one-dark"]) {
-      expect(ids, esperado).toContain(esperado);
+  test("the well-known palettes are present", () => {
+    const ids = THEMES.map((t) => t.id);
+    for (const expected of ["dracula", "nord", "gruvbox-dark", "tokyo-night", "one-dark"]) {
+      expect(ids, expected).toContain(expected);
     }
     expect(ids.some((i) => i.startsWith("catppuccin"))).toBe(true);
     expect(ids.some((i) => i.startsWith("solarized"))).toBe(true);
   });
 });
 
-describe("contraste mínimo", () => {
-  // texto sobre fundo precisa ser legível; um tema bonito e ilegível não serve
-  const luminancia = (hex: string) => {
-    const canal = (i: number) => {
+describe("minimum contrast", () => {
+  // text on background has to be readable; a beautiful illegible theme is no use
+  const luminance = (hex: string) => {
+    const channel = (i: number) => {
       const v = Number.parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255;
       return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
     };
-    return 0.2126 * canal(0) + 0.7152 * canal(1) + 0.0722 * canal(2);
+    return 0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2);
   };
-  const razao = (a: string, b: string) => {
-    const [x, y] = [luminancia(a), luminancia(b)].sort((p, q) => q - p);
+  const ratio = (a: string, b: string) => {
+    const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
     return (x! + 0.05) / (y! + 0.05);
   };
 
-  test("texto sobre fundo passa de 4.5:1 (WCAG AA) em todo tema", () => {
-    // 4.5 é o piso de legibilidade para texto corrido. Não subo para 7 (AAA)
-    // porque as paletas famosas não miram AAA — o Rosé Pine Dawn oficial dá
-    // 6.66 — e prefiro a paleta fiel a uma cor que eu inventei.
-    for (const t of TEMAS) {
-      expect(razao(t.cores.texto, t.cores.fundo), t.id).toBeGreaterThan(4.5);
+  test("text on background clears 4.5:1 (WCAG AA) in every theme", () => {
+    // 4.5 is the floor for body text. Not raised to 7 (AAA) because the
+    // well-known palettes do not aim for AAA — official Rosé Pine Dawn comes
+    // out at 6.66 — and a faithful palette beats a colour we invented.
+    for (const t of THEMES) {
+      expect(ratio(t.colors.text, t.colors.bg), t.id).toBeGreaterThan(4.5);
     }
   });
 
-  test("o tema padrão, que é o mais usado, passa de 7:1 (AAA)", () => {
-    const padrao = TEMAS.find((t) => t.id === TEMA_PADRAO)!;
-    expect(razao(padrao.cores.texto, padrao.cores.fundo)).toBeGreaterThan(7);
+  test("the default theme, the most used one, clears 7:1 (AAA)", () => {
+    const fallback = THEMES.find((t) => t.id === DEFAULT_THEME)!;
+    expect(ratio(fallback.colors.text, fallback.colors.bg)).toBeGreaterThan(7);
   });
 
-  test("texto suave ainda passa de 4.5:1", () => {
-    for (const t of TEMAS) {
-      expect(razao(t.cores.suave, t.cores.fundo), t.id).toBeGreaterThan(4.5);
+  test("muted text still clears 4.5:1", () => {
+    for (const t of THEMES) {
+      expect(ratio(t.colors.muted, t.colors.bg), t.id).toBeGreaterThan(4.5);
     }
   });
 
-  test("o destaque se separa do fundo", () => {
-    for (const t of TEMAS) {
-      expect(razao(t.cores.destaque, t.cores.fundo), t.id).toBeGreaterThan(3);
+  test("the accent separates from the background", () => {
+    for (const t of THEMES) {
+      expect(ratio(t.colors.accent, t.colors.bg), t.id).toBeGreaterThan(3);
     }
   });
 
-  test("comentário de código é legível sobre o fundo de código", () => {
-    for (const t of TEMAS) {
-      expect(razao(t.cores["cod-comentario"], t.cores.codigo), t.id).toBeGreaterThan(3);
+  test("a code comment is readable on the code background", () => {
+    for (const t of THEMES) {
+      expect(ratio(t.colors["code-comment"], t.colors["code-bg"]), t.id).toBeGreaterThan(3);
     }
   });
 });
 
-describe("fontes", () => {
-  test("tem serifada, que é a preferida para leitura", () => {
-    expect(FONTES.map((f) => f.id)).toContain("serifada");
+describe("fonts", () => {
+  test("there is a serif, the one preferred for reading", () => {
+    expect(FONTS.map((f) => f.id)).toContain("serif");
   });
 
-  test("tem pelo menos três opções", () => {
-    expect(FONTES.length).toBeGreaterThanOrEqual(3);
+  test("at least three to choose from", () => {
+    expect(FONTS.length).toBeGreaterThanOrEqual(3);
   });
 
-  test("toda fonte termina com uma família genérica, para nunca ficar sem", () => {
-    for (const f of FONTES) {
-      expect(f.pilha, f.id).toMatch(/(serif|sans-serif|monospace)\s*$/);
+  test("every stack ends in a generic family, so it never falls through", () => {
+    for (const f of FONTS) {
+      expect(f.stack, f.id).toMatch(/(serif|sans-serif|monospace)\s*$/);
     }
   });
 
-  test("id kebab-case e sem repetição", () => {
-    const ids = FONTES.map((f) => f.id);
+  test("ids are kebab-case and do not repeat", () => {
+    const ids = FONTS.map((f) => f.id);
     for (const id of ids) expect(id).toMatch(/^[a-z0-9-]+$/);
     expect(ids.length).toBe(new Set(ids).size);
   });
 });
 
-describe("cssDosTemas", () => {
-  const css = cssDosTemas();
+describe("themeCss", () => {
+  const css = themeCss();
 
-  test("gera um bloco por tema, endereçado pelo data-tema", () => {
-    for (const t of TEMAS) {
-      expect(css, t.id).toContain(`[data-tema="${t.id}"]`);
+  test("emits one block per theme, addressed by data-theme", () => {
+    for (const t of THEMES) {
+      expect(css, t.id).toContain(`[data-theme="${t.id}"]`);
     }
   });
 
-  test("o padrão também vale sem data-tema nenhum", () => {
+  test("the default also applies with no data-theme at all", () => {
     expect(css).toContain(":root");
   });
 
-  test("declara cada variável com o prefixo certo", () => {
-    for (const chave of CHAVES_DE_COR) {
-      expect(css, chave).toContain(`--${chave}:`);
+  test("declares every variable with the right prefix", () => {
+    for (const key of COLOR_KEYS) {
+      expect(css, key).toContain(`--${key}:`);
     }
   });
 
-  test("gera as pilhas de fonte", () => {
-    for (const f of FONTES) {
-      expect(css, f.id).toContain(`[data-fonte="${f.id}"]`);
+  test("emits the font stacks", () => {
+    for (const f of FONTS) {
+      expect(css, f.id).toContain(`[data-font="${f.id}"]`);
     }
   });
 });

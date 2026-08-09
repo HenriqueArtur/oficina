@@ -76,8 +76,10 @@ strings — and declares the plugins with each one's settings.
 ```json
 {
   "title": "Electronics",
+  "lang": "en",
   "content": { "lessons": "lessons", "reference": "reference", "mine": "mine" },
   "notes": { "sections": ["What went wrong", "What I did not understand"] },
+  "theme": { "default": "paper", "font": "serif" },
   "plugins": [
     { "name": "inventory", "script": "@bancada/inventory", "config": { "file": "inventory.yml" } }
   ]
@@ -86,7 +88,35 @@ strings — and declares the plugins with each one's settings.
 
 Labels default to English. A repository in another language overrides only what
 it needs — a public shell cannot hardcode one language, and a half-translated
-page is worse than an English one.
+page is worse than an English one. `lang` goes into `<html lang>`, which is
+what a screen reader reads pronunciation from.
+
+Prose labels take `{placeholder}` markers, filled by `fill()`. A marker nobody
+supplies is left on screen rather than becoming `undefined`: seeing `{tab}`
+tells you which label is wrong.
+
+## The CSS contract
+
+A plugin returns HTML that lands inside the shell's page, so the class names
+and the colour variables are as much of an API as the TypeScript is. Renaming
+one is a breaking change.
+
+The shell styles these; use them and your cards look like the built-in ones:
+
+| class | what it is |
+|---|---|
+| `card` | a titled block beside the lesson — what `cards()` should return |
+| `part` | a label/value row inside a card |
+| `badge` | a small pill, for counts and states |
+| `actions` | a row of buttons |
+| `copy-file` + `source` | a copy button and the `<pre hidden>` holding its text |
+
+Colours come from the active theme. Never hardcode one — the reader picked
+the theme, and a fixed colour ignores them:
+
+`--bg` `--text` `--muted` `--surface` `--border` `--accent` `--code-bg`
+`--canvas-bg` `--canvas-grid` `--code-comment` `--code-keyword` `--code-string`
+`--code-number` `--code-function` `--code-meta` `--code-type`
 
 ## License
 

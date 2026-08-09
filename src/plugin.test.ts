@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { applyStage, collect, normalizeConfig, type Plugin, register, STAGES } from "./plugin.ts";
+import {
+  applyStage,
+  collect,
+  DEFAULT_LABELS,
+  fill,
+  normalizeConfig,
+  type Plugin,
+  register,
+  STAGES,
+} from "./plugin.ts";
 
 const empty = (over: Partial<Plugin> = {}): Plugin => ({
   name: "test",
@@ -171,5 +180,57 @@ describe("labels", () => {
     for (const [key, value] of Object.entries(c.labels)) {
       expect(value, key).toBeTruthy();
     }
+  });
+});
+
+describe("fill", () => {
+  test("replaces a placeholder with its value", () => {
+    expect(fill("{a} of {b}", { a: 3, b: 16 })).toBe("3 of 16");
+  });
+
+  test("the same placeholder twice is replaced in both", () => {
+    expect(fill("{x}/{x}", { x: "a" })).toBe("a/a");
+  });
+
+  test("a key nobody passed stays visible instead of becoming undefined", () => {
+    // `undefined` on screen does not say which label is wrong; `{tab}` does
+    expect(fill("see it in {tab}", {})).toBe("see it in {tab}");
+  });
+
+  test("text with no placeholder passes through untouched", () => {
+    expect(fill("nothing here", { a: 1 })).toBe("nothing here");
+  });
+
+  test("a spare key is ignored in silence", () => {
+    expect(fill("{a}", { a: 1, spare: 2 })).toBe("1");
+  });
+
+  test("zero is a value, not an absence", () => {
+    expect(fill("{n} done", { n: 0 })).toBe("0 done");
+  });
+});
+
+describe("the document language", () => {
+  test("defaults to English, the language of the package", () => {
+    expect(normalizeConfig({ title: "x" }).lang).toBe("en");
+  });
+
+  test("a repository picks its own", () => {
+    expect(normalizeConfig({ title: "x", lang: "pt-BR" }).lang).toBe("pt-BR");
+  });
+
+  test("every label has a default, even when the config translates only some", () => {
+    const c = normalizeConfig({ title: "x", labels: { save: "Salvar" } as never });
+    expect(c.labels.save).toBe("Salvar");
+    expect(c.labels.copy).toBe(DEFAULT_LABELS.copy);
+    for (const k of Object.keys(DEFAULT_LABELS)) {
+      expect(c.labels[k as keyof typeof DEFAULT_LABELS], k).toBeTruthy();
+    }
+  });
+
+  test("the prose labels carry the placeholders the viewer fills", () => {
+    expect(DEFAULT_LABELS.notesIntro).toContain("{file}");
+    expect(DEFAULT_LABELS.homeProgress).toContain("{done}");
+    expect(DEFAULT_LABELS.homeProgress).toContain("{total}");
   });
 });

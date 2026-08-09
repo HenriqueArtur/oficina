@@ -1,0 +1,21 @@
+{
+  "title": "Fixture Workbench",
+  "lang": "en",
+  "content": {
+    "lessons": "lessons",
+    "reference": "reference",
+    "mine": "mine",
+    "lessonFile": "lesson.md",
+    "exercisesFile": "exercises.md",
+    "referenceOrder": ["safety", "basics"]
+  },
+  "notes": {
+    "sections": ["What went wrong", "What I did not understand"],
+    "statuses": [
+      { "id": "not-started", "label": "not started" },
+      { "id": "in-progress", "label": "in progress" },
+      { "id": "done", "label": "done" }
+    ]
+  },
+  "plugins": []
+}

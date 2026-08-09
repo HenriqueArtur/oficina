@@ -23,6 +23,29 @@ resistors short".
 Every tool that does that is welded to one subject. bancada is the half that
 is not.
 
+## Running it
+
+```ts
+import { createViewer, readConfig } from "bancada";
+
+const viewer = await createViewer(await readConfig());
+
+Bun.serve({
+  port: 4321,
+  fetch: (req, server) => viewer.handleRequest(req, { ip: server.requestIP(req)?.address }),
+});
+```
+
+`createViewer` resolves the config, loads the plugins and returns a request
+handler. It takes the repository root as a second argument, defaulting to the
+working directory — a package cannot know where it was installed, and two
+repositories in one process must not share state.
+
+The handler serves the pages and one write endpoint, `POST /api/notes/:id`,
+which refuses anything that does not come from loopback. Binding wide is how
+the browser reaches it across a VM boundary; refusing the write is why that is
+safe.
+
 ## What the shell does
 
 - renders markdown lessons in a reading order you declare

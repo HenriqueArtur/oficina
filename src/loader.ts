@@ -11,10 +11,11 @@ import { type Config, type Plugin, type Registry, register } from "./plugin.ts";
 /** A plugin script exports one factory; the default export or a named one. */
 type Factory = () => Plugin;
 
-async function loadOne(script: string): Promise<Plugin> {
-  const mod = (await import(
-    script.startsWith(".") ? join(process.cwd(), script) : script
-  )) as Record<string, unknown>;
+async function loadOne(script: string, root: string): Promise<Plugin> {
+  const mod = (await import(script.startsWith(".") ? join(root, script) : script)) as Record<
+    string,
+    unknown
+  >;
 
   const factory =
     (mod.default as Factory | undefined) ??
@@ -26,7 +27,7 @@ async function loadOne(script: string): Promise<Plugin> {
   return factory();
 }
 
-export async function loadPlugins(config: Config): Promise<Registry> {
+export async function loadPlugins(config: Config, root: string = process.cwd()): Promise<Registry> {
   const plugins: Plugin[] = [];
 
   for (const declared of config.plugins) {
@@ -34,7 +35,7 @@ export async function loadPlugins(config: Config): Promise<Registry> {
       throw new Error(`plugin '${declared.name}' has no script to load`);
     }
 
-    const plugin = await loadOne(declared.script);
+    const plugin = await loadOne(declared.script, root);
 
     if (plugin.name !== declared.name) {
       // Otherwise the config would key settings by one name and the plugin
@@ -45,7 +46,7 @@ export async function loadPlugins(config: Config): Promise<Registry> {
     }
 
     // `root` lets a plugin resolve paths without knowing where it was installed
-    await plugin.configure?.({ root: process.cwd(), ...declared.config });
+    await plugin.configure?.({ root, ...declared.config });
     plugins.push(plugin);
   }
 

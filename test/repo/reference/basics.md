@@ -1,0 +1,7 @@
+# Basics
+
+## Ohm
+
+```bash
+ls
+```

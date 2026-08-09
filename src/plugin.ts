@@ -178,10 +178,6 @@ export interface Labels {
   saved: string;
   theme: string;
   font: string;
-  notStarted: string;
-  inProgress: string;
-  done: string;
-  stuck: string;
   /** Column headers on the home table. */
   level: string;
   parts: string;
@@ -208,9 +204,43 @@ export interface Config {
   title: string;
   /** Goes into `<html lang>`; screen readers pick pronunciation from it. */
   lang: string;
-  content: { lessons: string; reference: string; mine: string };
+  content: {
+    lessons: string;
+    reference: string;
+    mine: string;
+    /** File names inside a lesson folder; content, so the repository names them. */
+    lessonFile: string;
+    exercisesFile: string;
+    /**
+     * Reference slugs in reading order. What is not on the list lands at the
+     * end, so a new file never falls out of the menu by omission.
+     */
+    referenceOrder: string[];
+  };
+  /**
+   * Frontmatter key → field. A repository writes its frontmatter in its own
+   * language; the shell reads the same six things whatever they are called.
+   */
+  frontmatter: {
+    title: string;
+    level: string;
+    requires: string;
+    parts: string;
+    pins: string;
+    concepts: string;
+  };
   vocabulary: { lesson: string; track: string };
-  notes: { sections: string[] };
+  notes: {
+    sections: string[];
+    /**
+     * The statuses a note may carry, in the order the editor shows them.
+     *
+     * `id` is DATA — it is written into the notes file — and `label` is what
+     * the screen says. Keeping them apart is what lets a repository translate
+     * the display without rewriting files that belong to its reader.
+     */
+    statuses: { id: string; label: string }[];
+  };
   theme: { default: string; font: string };
   labels: Labels;
   plugins: DeclaredPlugin[];
@@ -232,10 +262,6 @@ export const DEFAULT_LABELS: Labels = {
   saved: "saved",
   theme: "Theme",
   font: "Font",
-  notStarted: "not started",
-  inProgress: "in progress",
-  done: "done",
-  stuck: "stuck",
   level: "Level",
   parts: "Parts",
   themeAria: "Colour theme",
@@ -264,13 +290,49 @@ export function fill(template: string, values: Record<string, string | number>):
 }
 
 const DEFAULTS = {
-  content: { lessons: "lessons", reference: "reference", mine: "mine" },
+  content: {
+    lessons: "lessons",
+    reference: "reference",
+    mine: "mine",
+    lessonFile: "lesson.md",
+    exercisesFile: "exercises.md",
+    referenceOrder: [],
+  },
+  frontmatter: {
+    title: "title",
+    level: "level",
+    requires: "requires",
+    parts: "parts",
+    pins: "pins",
+    concepts: "concepts",
+  },
   vocabulary: { lesson: "lesson", track: "Track" },
-  notes: { sections: ["What went wrong", "What I did not understand"] },
+  notes: {
+    sections: ["What went wrong", "What I did not understand"],
+    statuses: [
+      { id: "not-started", label: "not started" },
+      { id: "in-progress", label: "in progress" },
+      { id: "done", label: "done" },
+      { id: "stuck", label: "stuck" },
+    ],
+  },
   theme: { default: "paper", font: "serif" },
 };
 
-export function normalizeConfig(raw: Partial<Config>): Config {
+/**
+ * A config as it comes out of the file: every level optional, because a
+ * repository overrides one key and inherits the rest. `Partial<Config>` only
+ * reaches the top level, which forced every caller to cast.
+ */
+export type RawConfig = {
+  [K in keyof Config]?: Config[K] extends Array<unknown>
+    ? Config[K]
+    : Config[K] extends object
+      ? Partial<Config[K]>
+      : Config[K];
+};
+
+export function normalizeConfig(raw: RawConfig): Config {
   if (!raw.title) {
     throw new Error("config has no `title` — it is the name shown in the header");
   }
@@ -279,6 +341,7 @@ export function normalizeConfig(raw: Partial<Config>): Config {
     title: raw.title,
     lang: raw.lang ?? "en",
     content: { ...DEFAULTS.content, ...raw.content },
+    frontmatter: { ...DEFAULTS.frontmatter, ...raw.frontmatter },
     vocabulary: { ...DEFAULTS.vocabulary, ...raw.vocabulary },
     notes: { ...DEFAULTS.notes, ...raw.notes },
     theme: { ...DEFAULTS.theme, ...raw.theme },
@@ -289,7 +352,7 @@ export function normalizeConfig(raw: Partial<Config>): Config {
 
 /**
  * Reads a repository's config. The path defaults to the working directory:
- * the package must not assume where it was installed.
+ * a package must not assume where it was installed.
  */
 export async function readConfig(
   path = join(process.cwd(), "bancada.config.json"),

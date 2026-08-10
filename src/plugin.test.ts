@@ -158,6 +158,91 @@ describe("config", () => {
   });
 });
 
+/**
+ * Which tabs a lesson page has is the repository's call. A study whose
+ * exercises are the place you write does not want a notes tab, and one that
+ * only reads does not want either.
+ */
+describe("tabs", () => {
+  test("default to all three, in reading order", () => {
+    const c = normalizeConfig({ title: "x" });
+    expect(c.tabs.map((t) => t.id)).toEqual(["lesson", "exercises", "notes"]);
+  });
+
+  test("nothing is editable by default — writing is opt-in", () => {
+    const c = normalizeConfig({ title: "x" });
+    expect(c.tabs.every((t) => !t.editable)).toBe(true);
+  });
+
+  test("a repository can drop a tab", () => {
+    const c = normalizeConfig({
+      title: "x",
+      tabs: [{ id: "lesson" }, { id: "exercises", editable: true }],
+    });
+    expect(c.tabs.map((t) => t.id)).toEqual(["lesson", "exercises"]);
+    expect(c.tabs[1]!.editable).toBe(true);
+  });
+
+  test("refuses a tab id the shell does not have — a typo would silently hide a tab", () => {
+    expect(() => normalizeConfig({ title: "x", tabs: [{ id: "exercicios" }] as never })).toThrow(
+      /exercicios/,
+    );
+  });
+
+  test("refuses an empty list — a lesson page with no tab shows nothing", () => {
+    expect(() => normalizeConfig({ title: "x", tabs: [] })).toThrow(/tabs/);
+  });
+
+  test("refuses the same tab twice", () => {
+    expect(() =>
+      normalizeConfig({ title: "x", tabs: [{ id: "lesson" }, { id: "lesson" }] }),
+    ).toThrow(/lesson/);
+  });
+});
+
+/**
+ * `done` and `mark` used to be the hardcoded strings "feito" and "travei" in
+ * the shell — Portuguese ids from the repository this package was extracted
+ * from. Every other repository got an empty progress count and no marks, and
+ * nothing said why.
+ */
+describe("status flags", () => {
+  test("a status can declare itself the finished one", () => {
+    const c = normalizeConfig({
+      title: "x",
+      notes: {
+        statuses: [
+          { id: "a", label: "a" },
+          { id: "b", label: "b", done: true },
+        ],
+      },
+    });
+    expect(c.notes.statuses[1]!.done).toBe(true);
+  });
+
+  test("a status can carry a mark for the sidebar", () => {
+    const c = normalizeConfig({
+      title: "x",
+      notes: { statuses: [{ id: "stuck", label: "stuck", mark: "!" }] },
+    });
+    expect(c.notes.statuses[0]!.mark).toBe("!");
+  });
+
+  test("refuses two finished statuses — the progress count would be ambiguous", () => {
+    expect(() =>
+      normalizeConfig({
+        title: "x",
+        notes: {
+          statuses: [
+            { id: "a", label: "a", done: true },
+            { id: "b", label: "b", done: true },
+          ],
+        },
+      }),
+    ).toThrow(/done/);
+  });
+});
+
 describe("labels", () => {
   test("default to English — a public shell cannot pick one language", () => {
     const c = normalizeConfig({ title: "x" });

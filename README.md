@@ -118,13 +118,60 @@ strings — and declares the plugins with each one's settings.
   "title": "Electronics",
   "lang": "en",
   "content": { "lessons": "lessons", "reference": "reference", "mine": "mine" },
-  "notes": { "sections": ["What went wrong", "What I did not understand"] },
+  "tabs": [{ "id": "lesson" }, { "id": "exercises" }, { "id": "notes" }],
+  "notes": {
+    "sections": ["What went wrong", "What I did not understand"],
+    "statuses": [
+      { "id": "not-started", "label": "not started" },
+      { "id": "done", "label": "done", "done": true, "mark": "✓" }
+    ]
+  },
   "theme": { "default": "paper", "font": "serif" },
   "plugins": [
     { "name": "inventory", "script": "@bancada/inventory", "config": { "file": "inventory.yml" } }
   ]
 }
 ```
+
+### Tabs
+
+`tabs` is which tabs a lesson page has, in order. It defaults to all three, so
+a repository that says nothing keeps what it had. A tab that is not declared is
+not rendered **and** is not reachable by URL — dropping one is not a matter of
+hiding a link.
+
+Dropping `notes` also drops what comes from notes: the status column on the
+home table, the progress line and the hint under it. A count that can only be
+zero, next to a tab that does not exist, is worse than no count.
+
+A tab may declare itself `editable`:
+
+```json
+"tabs": [{ "id": "lesson" }, { "id": "exercises", "editable": true }]
+```
+
+That opens the shell's editor on that tab's file — the whole file as markdown,
+behind an **Edit** button — and enables `POST /api/file/:tab/:id`, which
+refuses any tab that did not ask for it and refuses anything that is not
+loopback, like the notes endpoint does.
+
+It is deliberately a whole-file textarea rather than one field per section: a
+notes file has a shape this package defined, and a lesson file has whatever
+shape its author gave it.
+
+**Editing a lesson file writes inside the lessons folder** — the part of a
+repository meant to be shareable as a template. Turning this on is a statement
+that the file belongs to its reader, and that nothing generated should
+overwrite it again. `notes` ignores `editable`: it has an editor and an
+endpoint of its own.
+
+### Statuses
+
+`done` marks the status the home progress counts, and `mark` is what the
+sidebar shows beside a lesson in that state. Both were hardcoded Portuguese ids
+in the shell until 0.3.0 — every repository that did not happen to name a
+status `feito` had a progress count stuck at zero, silently. At most one status
+may be `done`; two is refused at config time.
 
 Labels default to English. A repository in another language overrides only what
 it needs — a public shell cannot hardcode one language, and a half-translated
@@ -146,6 +193,7 @@ The shell styles these; use them and your cards look like the built-in ones:
 | class | what it is |
 |---|---|
 | `card` | a titled block beside the lesson — what `cards()` should return |
+| `file-editor` | the editor on an editable tab: `.rendered` and `textarea.raw` |
 | `part` | a label/value row inside a card |
 | `badge` | a small pill, for counts and states |
 | `actions` | a row of buttons |

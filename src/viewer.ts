@@ -35,6 +35,8 @@ import {
   type MenuItem,
   type Registry,
   type Route,
+  TAB_IDS,
+  type TabConfig,
 } from "./plugin.ts";
 import { DEFAULT_FONT, DEFAULT_THEME, FONTS, THEMES, themeCss } from "./themes.ts";
 
@@ -84,7 +86,15 @@ export interface Viewer {
   statusLabel: Map<string, string>;
   /** What a note carries before anyone has touched it. */
   firstStatus: string;
+  /** The status the home progress counts, if the repository named one. */
+  doneStatus?: string;
+  statusMark: Map<string, string>;
   tabLabel: Record<string, string>;
+  /** The declared tabs, in order — `config.tabs`, resolved once. */
+  tabs: TabConfig[];
+  /** Tab id → the file it edits. Only the tabs that asked to be editable. */
+  editable: Map<string, string>;
+  notesEnabled: boolean;
   handleRequest: (req: Request, opts?: { ip?: string }) => Promise<Response>;
 }
 
@@ -105,14 +115,28 @@ export async function createViewer(config: Config, root: string = process.cwd())
     assets: new Map((await collect(plugins, "assets", null)).map((a: Asset) => [a.name, a])),
     menu: await collect(plugins, "menuItems", null),
     routes: await collect(plugins, "routes", null),
-    statusIds: statuses.map((s: { id: string }) => s.id),
-    statusLabel: new Map(statuses.map((s: { id: string; label: string }) => [s.id, s.label])),
+    statusIds: statuses.map((s) => s.id),
+    statusLabel: new Map(statuses.map((s) => [s.id, s.label])),
     firstStatus: statuses[0]?.id ?? "",
+    doneStatus: statuses.find((s) => s.done)?.id,
+    statusMark: new Map(statuses.filter((s) => s.mark).map((s) => [s.id, s.mark as string])),
     tabLabel: {
       lesson: config.labels.lesson,
       exercises: config.labels.exercises,
       notes: config.labels.myNotes,
     },
+    tabs: config.tabs,
+    // `notes` writes through its own endpoint and its own shape, so it is not
+    // in this map even if a config marks it editable.
+    editable: new Map(
+      config.tabs
+        .filter((t) => t.editable && t.id !== "notes")
+        .map((t) => [
+          t.id,
+          t.id === "exercises" ? config.content.exercisesFile : config.content.lessonFile,
+        ]),
+    ),
+    notesEnabled: config.tabs.some((t) => t.id === "notes"),
     handleRequest: () => Promise.reject(new Error("unreachable")),
   };
 
@@ -144,8 +168,11 @@ const asLesson = (v: Viewer, p: LessonFile): Lesson => {
  * The tab ids. Stable English ids, not display text: they go in the URL and
  * the server dispatches on them, so translating the page must not change
  * which link opens what.
+ *
+ * Which of them a given repository shows is `config.tabs`; this is the closed
+ * set the config is checked against.
  */
-export const TABS = ["lesson", "exercises", "notes"] as const;
+export const TABS = TAB_IDS;
 
 export type Tab = (typeof TABS)[number];
 
@@ -394,11 +421,28 @@ ${v.styles}
     font-weight: 600;
   }
   .editor-row { display: flex; align-items: center; gap: .8rem; margin-top: .7rem; }
-  .save-notes {
+  .save-notes, .save-file {
     cursor: pointer; padding: .5rem 1.1rem; border-radius: 6px; font-weight: 600;
     font-size: 13px; color: #fff; background: var(--accent); border: 0;
   }
-  .save-notes:hover { filter: brightness(1.08); }
+  .save-notes:hover, .save-file:hover { filter: brightness(1.08); }
+
+  /* the editor on an editable tab: the file as it reads, or as it is written */
+  .file-editor > .editor-row { margin: 0 0 1.2rem; }
+  .edit-file {
+    cursor: pointer; padding: .4rem .9rem; border-radius: 6px;
+    font: 13px/1 ui-sans-serif, system-ui, sans-serif;
+    color: var(--muted); background: none; border: 1px solid var(--border);
+    transition: color .12s, border-color .12s;
+  }
+  .edit-file:hover { color: var(--text); border-color: var(--muted); }
+  .file-editor textarea.raw {
+    width: 100%; min-height: 25rem; resize: vertical; padding: 1rem 1.1rem;
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px;
+    font: 14px/1.7 ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .file-editor textarea.raw:focus { outline: none; border-color: var(--accent); }
   .hint { font-size: 12px; color: var(--muted); }
   .saved { font-size: 12px; color: var(--code-string); font-weight: 600; }
   .saved.bad { color: var(--accent); }
@@ -479,6 +523,72 @@ ${
       localStorage.setItem(chave, campo.value);
     });
   }
+})();
+
+// ── the file editor, on an editable tab ─────────────────────────────
+(() => {
+  const box = document.querySelector(".file-editor");
+  if (!box) return;
+
+  const area = box.querySelector("textarea.raw");
+  const rendered = box.querySelector(".rendered");
+  const editButton = box.querySelector(".edit-file");
+  const saveButton = box.querySelector(".save-file");
+  const hint = box.querySelector(".hint");
+  const salvo = box.querySelector(".saved");
+  let sujo = false;
+
+  const avisar = (texto, ruim) => {
+    salvo.textContent = texto;
+    salvo.classList.toggle("bad", !!ruim);
+    salvo.hidden = false;
+    clearTimeout(salvo._t);
+    salvo._t = setTimeout(() => { salvo.hidden = true; }, 1800);
+  };
+
+  const abrir = () => {
+    rendered.hidden = true;
+    area.hidden = false;
+    editButton.hidden = true;
+    saveButton.hidden = false;
+    hint.hidden = false;
+    area.style.height = Math.max(area.scrollHeight, 400) + "px";
+    area.focus();
+  };
+
+  const salvar = async () => {
+    try {
+      const r = await fetch("/api/file/" + box.dataset.tab + "/" + box.dataset.lesson, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: area.value }),
+      });
+      if (!r.ok) return avisar(${JSON.stringify(v.config.labels.saveError)} + (await r.text()), true);
+      sujo = false;
+      // Reload so the rendered half shows what was just written: keeping two
+      // copies of the same file on screen is how they drift.
+      location.reload();
+    } catch (e) {
+      avisar(${JSON.stringify(v.config.labels.offline)}, true);
+    }
+  };
+
+  editButton.addEventListener("click", abrir);
+  saveButton.addEventListener("click", salvar);
+  area.addEventListener("input", () => { sujo = true; });
+
+  addEventListener("keydown", (ev) => {
+    if ((ev.metaKey || ev.ctrlKey) && ev.key === "s") {
+      ev.preventDefault();
+      if (area.hidden) abrir(); else salvar();
+    }
+  });
+
+  addEventListener("beforeunload", (ev) => {
+    if (!sujo) return;
+    ev.preventDefault();
+    ev.returnValue = "";
+  });
 })();
 
 // ── the notes editor ────────────────────────────────────────────────
@@ -651,8 +761,11 @@ ${
 async function buildMenu(v: Viewer, lessons: LessonFile[], active: string): Promise<string> {
   const items = await Promise.all(
     lessons.map(async (p) => {
-      const notes = await readNotes(v.content, p.folder);
-      const mark = notes?.status === "feito" ? "✓" : notes?.status === "travei" ? "!" : "";
+      // The mark is whatever the status declared. It used to be "feito" and
+      // "travei" written here — ids from one repository, invisible to every
+      // other one.
+      const notes = v.notesEnabled ? await readNotes(v.content, p.folder) : null;
+      const mark = escapeHtml(v.statusMark.get(notes?.status ?? "") ?? "");
       const cls = p.folder === active ? ' class="active"' : "";
       const [num, ...rest] = p.folder.split("-");
       return `<a href="/p/${p.folder}"${cls}><span class="num">${num}</span>${escapeHtml(
@@ -704,46 +817,68 @@ function buildPageIndex(v: Viewer, secoes: Section[]): string {
   return `<aside class="toc"><h2>${escapeHtml(v.config.labels.onThisPage)}</h2>${items}</aside>`;
 }
 
+/**
+ * The home table.
+ *
+ * Everything that comes from the notes — the status column, the progress line
+ * and the hint that points at the notes tab — is dropped when the repository
+ * has no notes tab. Leaving them behind shows a count that can only ever be
+ * zero, next to a tab that does not exist.
+ */
 async function renderHome(v: Viewer, lessons: LessonFile[]): Promise<string> {
-  const rows = await Promise.all(
-    lessons.map(async (p) => {
-      const notes = await readNotes(v.content, p.folder);
-      const status = v.statusLabel.get(notes?.status ?? v.firstStatus) ?? "";
-      return `<tr><td><a href="/p/${p.folder}">${escapeHtml(p.title)}</a></td>
-        <td>${p.level}</td><td>${status}</td>
-        <td>${p.parts.length}</td></tr>`;
-    }),
-  );
+  const statuses = v.notesEnabled
+    ? await Promise.all(lessons.map((p) => readNotes(v.content, p.folder)))
+    : [];
 
-  const done = (
-    await Promise.all(
-      lessons.map(async (p) => (await readNotes(v.content, p.folder))?.status === "feito"),
-    )
-  ).filter(Boolean).length;
+  const rows = lessons.map((p, i) => {
+    const cell = v.notesEnabled
+      ? `<td>${escapeHtml(v.statusLabel.get(statuses[i]?.status ?? v.firstStatus) ?? "")}</td>`
+      : "";
+    return `<tr><td><a href="/p/${p.folder}">${escapeHtml(p.title)}</a></td>
+        <td>${p.level}</td>${cell}
+        <td>${p.parts.length}</td></tr>`;
+  });
+
+  const done = v.doneStatus ? statuses.filter((n) => n?.status === v.doneStatus).length : 0;
 
   const { labels } = v.config;
-  const headers = [labels.lesson, labels.level, labels.status, labels.parts]
+  const headers = [
+    labels.lesson,
+    labels.level,
+    ...(v.notesEnabled ? [labels.status] : []),
+    labels.parts,
+  ]
     .map((t) => `<th>${escapeHtml(t)}</th>`)
     .join("");
 
+  const progress = v.notesEnabled
+    ? `<p>${fill(escapeHtml(labels.homeProgress), {
+        done: `<strong>${done}</strong>`,
+        total: `<strong>${lessons.length}</strong>`,
+      })}</p>`
+    : "";
+
+  const hint = v.notesEnabled
+    ? `<p style="margin-top:2rem;color:var(--muted);font-size:14px">
+    ${fill(escapeHtml(labels.homeHint), { tab: escapeHtml(labels.myNotes) })}</p>`
+    : "";
+
   return `<h1>${escapeHtml(v.config.title)}</h1>
-    <p>${fill(escapeHtml(labels.homeProgress), {
-      done: `<strong>${done}</strong>`,
-      total: `<strong>${lessons.length}</strong>`,
-    })}</p>
+    ${progress}
     <table><thead><tr>${headers}</tr></thead>
     <tbody>${rows.join("")}</tbody></table>
-    <p style="margin-top:2rem;color:var(--muted);font-size:14px">
-    ${fill(escapeHtml(labels.homeHint), { tab: escapeHtml(labels.myNotes) })}</p>`;
+    ${hint}`;
 }
 
 const buildTabs = (v: Viewer, p: LessonFile, tab: string) =>
-  TABS.map(
-    (a) =>
-      `<a href="/p/${p.folder}?tab=${a}"${a === tab ? ' class="active"' : ""}>${escapeHtml(
-        v.tabLabel[a] ?? a,
-      )}</a>`,
-  ).join("");
+  v.tabs
+    .map(
+      ({ id }) =>
+        `<a href="/p/${p.folder}?tab=${id}"${id === tab ? ' class="active"' : ""}>${escapeHtml(
+          v.tabLabel[id] ?? id,
+        )}</a>`,
+    )
+    .join("");
 
 /** The notes editor: clickable status, and the raw markdown in textareas. */
 async function notesEditor(v: Viewer, p: LessonFile): Promise<string> {
@@ -787,6 +922,29 @@ async function notesEditor(v: Viewer, p: LessonFile): Promise<string> {
   </div>`;
 }
 
+/**
+ * The editor for a content file: what is rendered, plus the raw markdown
+ * behind a button.
+ *
+ * It is a whole-file textarea and not a field per section, which is what the
+ * notes editor does. A notes file has a shape this package defined; an
+ * exercises file has whatever shape its author gave it, and splitting that on
+ * headings would quietly reorganise someone else's document.
+ */
+function fileEditor(v: Viewer, p: LessonFile, tab: string, raw: string, rendered: string): string {
+  const { labels } = v.config;
+  return `<div class="file-editor" data-lesson="${escapeHtml(p.folder)}" data-tab="${escapeHtml(tab)}">
+    <div class="editor-row">
+      <button type="button" class="edit-file">${escapeHtml(labels.edit)}</button>
+      <button type="button" class="save-file" hidden>${escapeHtml(labels.save)}</button>
+      <span class="saved" hidden>${escapeHtml(labels.saved)}</span>
+      <span class="hint" hidden>${escapeHtml(labels.editHint)}</span>
+    </div>
+    <div class="rendered">${rendered}</div>
+    <textarea class="raw" spellcheck="true" hidden>${escapeHtml(raw)}</textarea>
+  </div>`;
+}
+
 async function renderLesson(
   v: Viewer,
   p: LessonFile,
@@ -810,7 +968,8 @@ async function renderLesson(
   const raw = await Bun.file(join(p.path, file)).text();
   const rendered = await marked.parse(raw.replace(/^---\n[\s\S]*?\n---\n/, ""));
   const { html: withIds, sections } = withAnchors(rendered);
-  const body = withCopyButtons(withIds, v.config.labels);
+  const rendedBody = withCopyButtons(withIds, v.config.labels);
+  const body = v.editable.has(tab) ? fileEditor(v, p, tab, raw, rendedBody) : rendedBody;
 
   const tabs = buildTabs(v, p, tab);
 
@@ -841,6 +1000,51 @@ async function handleRequest(
   const url = new URL(req.url);
 
   try {
+    // ── escrita de um arquivo de lição ────────────────────────────
+    const fileApi = url.pathname.match(/^\/api\/file\/([^/]+)\/([^/]+)$/);
+    if (fileApi) {
+      const [, tab, id] = fileApi as unknown as [string, string, string];
+
+      if (req.method !== "POST") {
+        return new Response("use POST", { status: 405, headers: { allow: "POST" } });
+      }
+      if (!(TAB_IDS as readonly string[]).includes(tab)) {
+        return new Response(`no tab named ${tab}`, { status: 404 });
+      }
+      // Same reason as the notes endpoint: the server binds wide so the
+      // browser reaches it across a VM boundary, and writing a file to disk
+      // from the network is not something reading is.
+      if (opts.ip && !LOOPBACK.has(opts.ip)) {
+        return new Response("writes are allowed from this machine only", { status: 403 });
+      }
+      // Not "is this a tab", but "did the config open this tab for writing".
+      // A tab that never asked is as closed as one that does not exist.
+      const file = v.editable.get(tab);
+      if (!file) {
+        return new Response(`the \`${tab}\` tab is not editable in this repository`, {
+          status: 403,
+        });
+      }
+
+      const lesson = (await readLessons(v.content)).find((p) => p.folder === id);
+      if (!lesson) return new Response("lesson not found", { status: 404 });
+
+      let payload: { text?: unknown };
+      try {
+        payload = await req.json();
+      } catch {
+        return new Response("body is not JSON", { status: 400 });
+      }
+      // An absent `text` is refused rather than treated as "": a save that
+      // silently emptied the file would be the worst possible default here.
+      if (typeof payload.text !== "string") {
+        return new Response("body needs a `text` string", { status: 400 });
+      }
+
+      await Bun.write(join(lesson.path, file), payload.text);
+      return Response.json({ ok: true });
+    }
+
     // ── escrita das notes ─────────────────────────────────────────
     const notesApi = url.pathname.match(/^\/api\/notes\/([^/]+)$/);
     if (notesApi) {
@@ -964,9 +1168,10 @@ async function handleRequest(
       const p = lessons.find((x) => x.folder === matched[1]);
       if (!p) return new Response("lesson not found", { status: 404 });
 
-      const tab = url.searchParams.get("tab") ?? "lesson";
-      if (!(TABS as readonly string[]).includes(tab))
-        return new Response("unknown tab", { status: 404 });
+      // Against the *declared* tabs, not the shell's set: a tab this
+      // repository dropped must not stay reachable by typing the URL.
+      const tab = url.searchParams.get("tab") ?? v.tabs[0]?.id ?? "lesson";
+      if (!v.tabs.some((t) => t.id === tab)) return new Response("unknown tab", { status: 404 });
 
       const { body, toc } = await renderLesson(v, p, tab);
       return html(renderPage(v, p.title, await buildMenu(v, lessons, p.folder), body, toc));

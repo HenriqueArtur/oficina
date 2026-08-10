@@ -190,14 +190,45 @@ export interface Labels {
   themeAria: string;
   fontAria: string;
   copyCode: string;
+  /** Opens the editor on an editable tab. */
+  edit: string;
   /** Prose. `{}` placeholders are filled by `fill()`. */
   notesIntro: string;
   notesHint: string;
+  editHint: string;
   homeProgress: string;
   homeHint: string;
   /** Shown by the notes editor when a save does not land. */
   saveError: string;
   offline: string;
+}
+
+/** The tabs a lesson page can have. The order in the config is the order on screen. */
+export const TAB_IDS = ["lesson", "exercises", "notes"] as const;
+
+export type TabId = (typeof TAB_IDS)[number];
+
+export interface TabConfig {
+  id: TabId;
+  /**
+   * Opens the shell's editor on this tab's file. Ignored for `notes`, which
+   * has an editor of its own.
+   *
+   * Editing a lesson file writes inside the lessons folder — the part of the
+   * repository that is meant to be shareable as a template. A repository that
+   * turns this on is saying that file belongs to its reader, and nothing
+   * generated should overwrite it again.
+   */
+  editable?: boolean;
+}
+
+export interface StatusConfig {
+  id: string;
+  label: string;
+  /** The finished state: what the home progress counts. At most one. */
+  done?: boolean;
+  /** Shown beside the lesson in the sidebar — "✓", "!", whatever fits. */
+  mark?: string;
 }
 
 export interface Config {
@@ -230,6 +261,7 @@ export interface Config {
     concepts: string;
   };
   vocabulary: { lesson: string; track: string };
+  /** @see Config.notes.statuses */
   notes: {
     sections: string[];
     /**
@@ -238,9 +270,24 @@ export interface Config {
      * `id` is DATA — it is written into the notes file — and `label` is what
      * the screen says. Keeping them apart is what lets a repository translate
      * the display without rewriting files that belong to its reader.
+     *
+     * `done` says which status the home progress counts, and `mark` is what
+     * the sidebar shows beside a lesson in that state. Both used to be
+     * hardcoded Portuguese ids in this package — every repository that did not
+     * happen to name a status `feito` got a progress count stuck at zero, and
+     * nothing said why.
      */
-    statuses: { id: string; label: string }[];
+    statuses: StatusConfig[];
   };
+  /**
+   * Which tabs a lesson page has, in order, and which of them write.
+   *
+   * A repository whose exercises are the place its reader writes does not
+   * want a notes tab; one that is read-only wants neither. `editable` opens
+   * the shell's editor on that tab's file — see the write endpoint in the
+   * viewer, which refuses any tab that did not ask for it.
+   */
+  tabs: TabConfig[];
   theme: { default: string; font: string };
   labels: Labels;
   plugins: DeclaredPlugin[];
@@ -260,6 +307,7 @@ export const DEFAULT_LABELS: Labels = {
   status: "Status",
   save: "Save",
   saved: "saved",
+  edit: "Edit",
   theme: "Theme",
   font: "Font",
   level: "Level",
@@ -271,6 +319,7 @@ export const DEFAULT_LABELS: Labels = {
     "This file is yours and lives in {file}, outside {lessons} — nothing generated " +
     "writes over it, and the repository can be shared without it.",
   notesHint: "markdown in each field · ⌘/Ctrl+S saves · saves on its own when you leave a field",
+  editHint: "the whole file, as markdown · ⌘/Ctrl+S saves",
   homeProgress: "{done} of {total} done.",
   homeHint: "The status comes from each lesson's notes file — edit it in {tab} and reload.",
   saveError: "error: ",
@@ -312,12 +361,47 @@ const DEFAULTS = {
     statuses: [
       { id: "not-started", label: "not started" },
       { id: "in-progress", label: "in progress" },
-      { id: "done", label: "done" },
-      { id: "stuck", label: "stuck" },
+      { id: "done", label: "done", done: true, mark: "✓" },
+      { id: "stuck", label: "stuck", mark: "!" },
     ],
   },
+  tabs: TAB_IDS.map((id) => ({ id })),
   theme: { default: "paper", font: "serif" },
 };
+
+/**
+ * A tab list has to be checked at config time, not at render time: a typo
+ * would drop a tab from the page, and a missing tab looks exactly like a tab
+ * that was never wanted.
+ */
+function normalizeTabs(raw: TabConfig[] | undefined): TabConfig[] {
+  if (raw === undefined) return DEFAULTS.tabs.map((t) => ({ ...t }));
+  if (raw.length === 0) {
+    throw new Error("config has an empty `tabs` — a lesson page needs at least one");
+  }
+
+  const seen = new Set<string>();
+  for (const tab of raw) {
+    if (!(TAB_IDS as readonly string[]).includes(tab.id)) {
+      throw new Error(`unknown tab \`${tab.id}\` — the shell has ${TAB_IDS.join(", ")}`);
+    }
+    if (seen.has(tab.id)) throw new Error(`tab \`${tab.id}\` is declared twice`);
+    seen.add(tab.id);
+  }
+  return raw.map((t) => ({ ...t }));
+}
+
+function normalizeStatuses(raw: StatusConfig[]): StatusConfig[] {
+  const done = raw.filter((s) => s.done);
+  if (done.length > 1) {
+    throw new Error(
+      `${done.length} statuses are marked \`done\` (${done
+        .map((s) => s.id)
+        .join(", ")}) — the progress count would not know which one to count`,
+    );
+  }
+  return raw;
+}
 
 /**
  * A config as it comes out of the file: every level optional, because a
@@ -343,7 +427,11 @@ export function normalizeConfig(raw: RawConfig): Config {
     content: { ...DEFAULTS.content, ...raw.content },
     frontmatter: { ...DEFAULTS.frontmatter, ...raw.frontmatter },
     vocabulary: { ...DEFAULTS.vocabulary, ...raw.vocabulary },
-    notes: { ...DEFAULTS.notes, ...raw.notes },
+    notes: (() => {
+      const notes = { ...DEFAULTS.notes, ...raw.notes };
+      return { ...notes, statuses: normalizeStatuses(notes.statuses) };
+    })(),
+    tabs: normalizeTabs(raw.tabs),
     theme: { ...DEFAULTS.theme, ...raw.theme },
     labels: { ...DEFAULT_LABELS, ...raw.labels },
     plugins: (raw.plugins ?? []).map((p) => ({ ...p, config: p.config ?? {} })),

@@ -374,3 +374,190 @@ describe("escaping", () => {
     }
   });
 });
+
+// ─────────────────────────── the tabs ───────────────────────────
+
+/**
+ * Which tabs exist is the repository's call. Until now `TABS` was a module
+ * constant and every repository got all three, whether or not it used them.
+ */
+describe("tabs come from the config", () => {
+  const twoTabs = async () =>
+    createViewer(
+      normalizeConfig({ ...CONFIG, tabs: [{ id: "lesson" }, { id: "exercises" }] }),
+      REPO,
+    );
+
+  test("renders only the declared ones", async () => {
+    const v = await twoTabs();
+    const body = await (await v.handleRequest(new Request("http://localhost/p/01-first"))).text();
+    expect(body).toContain("?tab=exercises");
+    expect(body).not.toContain("?tab=notes");
+  });
+
+  test("a dropped tab is not reachable by URL either", async () => {
+    const v = await twoTabs();
+    const r = await v.handleRequest(new Request("http://localhost/p/01-first?tab=notes"));
+    expect(r.status).toBe(404);
+  });
+
+  test("all three by default — a repository that says nothing loses nothing", async () => {
+    expect(await bodyOf("/p/01-first")).toContain("?tab=notes");
+  });
+
+  test("without a notes tab the home drops what comes from notes", async () => {
+    const v = await twoTabs();
+    const home = await (await v.handleRequest(new Request("http://localhost/"))).text();
+    expect(home).not.toContain(CONFIG.labels.status);
+    expect(home).not.toContain("done.");
+  });
+});
+
+// ────────────────────── editing a lesson file ──────────────────────
+
+describe("an editable tab", () => {
+  const ID = "01-first";
+  const editable = async () =>
+    createViewer(
+      normalizeConfig({
+        ...CONFIG,
+        tabs: [{ id: "lesson" }, { id: "exercises", editable: true }],
+      }),
+      REPO,
+    );
+
+  const post = async (path: string, body: unknown, ip?: string) => {
+    const v = await editable();
+    return v.handleRequest(
+      new Request(`http://localhost${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      }),
+      ip ? { ip } : undefined,
+    );
+  };
+
+  const restore = async () => {
+    const path = `${REPO}/lessons/${ID}/exercises.md`;
+    const original = await Bun.file(path).text();
+    return async () => {
+      await Bun.write(path, original);
+    };
+  };
+
+  test("shows an editor holding the raw markdown", async () => {
+    const v = await editable();
+    const body = await (
+      await v.handleRequest(new Request(`http://localhost/p/${ID}?tab=exercises`))
+    ).text();
+    expect(body).toContain('<div class="file-editor"');
+    expect(body).toContain('data-tab="exercises"');
+  });
+
+  test("a tab that did not ask for it has no editor", async () => {
+    // the inline script mentions the class on every page; the element is what
+    // must be absent
+    expect(await bodyOf(`/p/${ID}?tab=exercises`)).not.toContain('<div class="file-editor"');
+  });
+
+  test("writes what it was given", async () => {
+    const undo = await restore();
+    try {
+      const r = await post(`/api/file/exercises/${ID}`, { text: "# changed\n" });
+      expect(r.status).toBe(200);
+      expect(await Bun.file(`${REPO}/lessons/${ID}/exercises.md`).text()).toBe("# changed\n");
+    } finally {
+      await undo();
+    }
+  });
+
+  test("refuses a tab the config did not make editable", async () => {
+    const r = await post(`/api/file/lesson/${ID}`, { text: "# nope\n" });
+    expect(r.status).toBe(403);
+    expect(await Bun.file(`${REPO}/lessons/${ID}/lesson.md`).text()).not.toBe("# nope\n");
+  });
+
+  test("refuses the notes tab here — it has its own endpoint and its own shape", async () => {
+    expect((await post(`/api/file/notes/${ID}`, { text: "x" })).status).toBe(403);
+  });
+
+  test("refuses a write coming from off this machine", async () => {
+    expect((await post(`/api/file/exercises/${ID}`, { text: "x" }, "10.0.0.9")).status).toBe(403);
+  });
+
+  test("accepts a write from loopback", async () => {
+    const undo = await restore();
+    try {
+      expect((await post(`/api/file/exercises/${ID}`, { text: "x" }, "127.0.0.1")).status).toBe(
+        200,
+      );
+    } finally {
+      await undo();
+    }
+  });
+
+  test("refuses a lesson that does not exist", async () => {
+    expect((await post("/api/file/exercises/99-nothing", { text: "x" })).status).toBe(404);
+    expect(await Bun.file(`${REPO}/lessons/99-nothing/exercises.md`).exists()).toBe(false);
+  });
+
+  test("refuses an unknown tab id", async () => {
+    expect((await post(`/api/file/whatever/${ID}`, { text: "x" })).status).toBe(404);
+  });
+
+  test("a GET does not write", async () => {
+    const v = await editable();
+    const r = await v.handleRequest(new Request(`http://localhost/api/file/exercises/${ID}`));
+    expect(r.status).toBe(405);
+  });
+
+  test("a body that is not JSON is refused, not swallowed", async () => {
+    expect((await post(`/api/file/exercises/${ID}`, "{not json")).status).toBe(400);
+  });
+
+  test("a payload without text is refused — an empty save would erase the file", async () => {
+    expect((await post(`/api/file/exercises/${ID}`, { nope: 1 })).status).toBe(400);
+  });
+});
+
+// ─────────────────────── status: done and mark ───────────────────────
+
+/**
+ * These two were the hardcoded strings "feito" and "travei" — ids from the
+ * repository this package came out of. Any other repository got no marks and
+ * a progress count stuck at zero, silently.
+ */
+describe("status flags come from the config", () => {
+  test("the sidebar mark is the one the status declares", async () => {
+    const v = await createViewer(
+      normalizeConfig({
+        ...CONFIG,
+        notes: {
+          ...CONFIG.notes,
+          statuses: [
+            { id: "not-started", label: "not started" },
+            { id: "in-progress", label: "in progress", mark: "◐" },
+            { id: "done", label: "done", done: true, mark: "✦" },
+          ],
+        },
+      }),
+      REPO,
+    );
+    // the fixture has one lesson at `done`
+    const body = await (await v.handleRequest(new Request("http://localhost/"))).text();
+    expect(body).toContain("✦");
+  });
+
+  test("no status declares itself done — the count is zero and nothing pretends", async () => {
+    const v = await createViewer(
+      normalizeConfig({
+        ...CONFIG,
+        notes: { ...CONFIG.notes, statuses: [{ id: "not-started", label: "not started" }] },
+      }),
+      REPO,
+    );
+    const body = await (await v.handleRequest(new Request("http://localhost/"))).text();
+    expect(body).toContain("<strong>0</strong>");
+  });
+});

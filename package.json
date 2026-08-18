@@ -1,5 +1,5 @@
 {
-  "name": "bancada",
+  "name": "oficina",
   "version": "0.2.0",
   "description": "A local-first study workbench: markdown lessons, your notes, and plugins for the subject you are learning",
   "keywords": [
@@ -9,13 +9,13 @@
     "plugins",
     "local-first"
   ],
-  "homepage": "https://github.com/HenriqueArtur/bancada#readme",
+  "homepage": "https://github.com/HenriqueArtur/oficina#readme",
   "bugs": {
-    "url": "https://github.com/HenriqueArtur/bancada/issues"
+    "url": "https://github.com/HenriqueArtur/oficina/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HenriqueArtur/bancada.git"
+    "url": "git+https://github.com/HenriqueArtur/oficina.git"
   },
   "license": "MIT",
   "author": "Henrique Artur <contato@henriqueartur.com>",

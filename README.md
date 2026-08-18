@@ -1,4 +1,17 @@
-# bancada
+# oficina
+
+> **Renamed, and parked.** This project was called `bancada`. The name went to
+> a different project of mine —
+> [HenriqueArtur/bancada](https://github.com/HenriqueArtur/bancada), a cockpit
+> for supervising AI coding agents.
+>
+> The study viewer this repository holds is being folded into that project as
+> its documentation surface, under a plugin contract that returns typed data
+> rather than HTML. This repository is kept as reference and receives no
+> further work.
+>
+> The text below predates the rename and still says `bancada` in places. It was
+> left as it was rather than half-rewritten.
 
 A local-first study workbench. Markdown lessons on disk, your notes beside
 them, and plugins for whatever you are actually learning.
